@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"time"
 )
 
 type Server struct {
@@ -30,16 +31,9 @@ func NewServer(ip string, port int) *Server {
 func (this *Server) Handler(conn net.Conn) {
 	// ... Logics here
 	// fmt.Printf("New connection accepted!")
-	user := NewUser(conn)
-
-	// when user gets online, put user info into online map
-	this.mapLock.Lock()
-	this.OnlineMap[user.Name] = user
-	this.mapLock.Unlock()
-
-	// broadcast this user now online!
-	this.BroadCast(user, "now online!")
-
+	user := NewUser(conn, this)
+	user.Online()
+	isAlive := make(chan struct{})
 	// this goroutine is set for recieving the message from the client
 	// current function is TCP-Based Multi-User Chatroom
 	// Private chatting function will be added in the future development
@@ -48,7 +42,7 @@ func (this *Server) Handler(conn net.Conn) {
 		for {
 			n, err := conn.Read(buf)
 			if n == 0 {
-				this.BroadCast(user, "now offline!")
+				user.Offline()
 				return
 			}
 
@@ -60,12 +54,24 @@ func (this *Server) Handler(conn net.Conn) {
 			// n-1 is set for remove the tail '\n'
 			msg := string(buf[:n-1])
 
-			this.BroadCast(user, msg)
+			user.DoMessage(msg)
+
+			isAlive <- struct{}{}
 		}
 	}()
 
 	// current handler blocked
-	select {}
+	for {
+		select {
+		case <-isAlive:
+			// nothing
+		case <-time.After(time.Second * 180):
+			user.SendMessage("You were kicked from the server!")
+			close(user.Ch)
+			conn.Close()
+			return
+		}
+	}
 }
 
 func (this *Server) BroadCast(user *User, msg string) {
