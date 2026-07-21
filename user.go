@@ -1,6 +1,9 @@
 package main
 
-import "net"
+import (
+	"net"
+	"strings"
+)
 
 type User struct {
 	Name   string
@@ -36,12 +39,12 @@ func (this *User) Offline() {
 func (this *User) DoMessage(msg string) {
 	if msg == "/online" {
 		// query for all online users
-		this.server.mapLock.Lock()
+		this.server.mapLock.RLock()
 		for _, user := range this.server.OnlineMap {
 			temp := "[" + user.Addr + "]" + user.Name + ":" + "is online...\n"
 			this.SendMessage(temp)
 		}
-		this.server.mapLock.Unlock()
+		this.server.mapLock.RUnlock()
 	} else if len(msg) >= 8 && msg[:8] == "/rename " {
 		NewName := msg[8:]
 		_, ok := this.server.OnlineMap[NewName]
@@ -54,6 +57,20 @@ func (this *User) DoMessage(msg string) {
 			this.server.mapLock.Unlock()
 			this.Name = NewName
 			this.SendMessage("Your name has been successfully changed, new name : " + NewName + "\n")
+		}
+	} else if len(msg) >= 4 && msg[:4] == "/to " {
+		parts := strings.SplitN(msg, " ", 3)
+		if len(parts) < 3 {
+			this.SendMessage("Usage: /to <username> <message>\n")
+		} else {
+			to := parts[1]
+			pmsg := parts[2]
+			target, ok := this.server.OnlineMap[to]
+			if !ok {
+				this.SendMessage("Error: user " + to + " is not online!\n")
+			} else {
+				target.SendMessage("[Private Message] " + this.Name + ": " + pmsg + "\n")
+			}
 		}
 	} else {
 		this.server.BroadCast(this, msg)
